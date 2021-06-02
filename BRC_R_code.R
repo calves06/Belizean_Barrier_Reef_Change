@@ -1,19 +1,36 @@
-## Belize Benthic Change paper
+## Belize Benthic Community Change paper
 ## R Code for public access
-library(readr)
-library(dplyr)
-library(tidyr)
-library(scales)
-library(ggsci)
-library(ggplot2)
-library(blme)
-library(sjPlot)
+## Alves et al PlosOne
 
+### REQUIRED LIBRARIES
+  library(readr)
+  library(dplyr)
+  library(tidyr)
+  library(scales)
+  library(ggplot2)
+  library(ggsci)
+  library(blme)
+  library(sjPlot)
+  library(Hmisc)
+  library(arm)
+  library(vegan)
 
-### DATA CLEANING ####
-## Read data
-  MasterDF <- readr::read_csv("Data/Processed/Long.Master.Species.Groups.csv")
-  ProtectionDF <- readr::read_csv("Data/Site/Belize_site_coord_protection.csv")
+## READ AND CLEAN DATA -------- #####
+  #bio info
+  MasterDF <- readr::read_csv("Data/Processed/Long.Master.Species.Groups.csv") 
+  #site info
+  ProtectionDF <- readr::read_csv("Data/Site/Belize_site_coord_protection.csv") 
+  
+## Recode protection status to fishing allowed or prohibited
+  #NP and GU = "partially protection"
+  #FP = "Full protection")
+  ProtectionDF$Protection_level <-
+    dplyr::recode_factor(
+      ProtectionDF$Protection,
+      "NP" = "Fishing allowed",
+      "GU" = "Fishing allowed",
+      "FP" = "Fishing prohibited"
+    )
   
 ## Check that all benthic images add to 100
  MasterDF %>%
@@ -25,27 +42,30 @@ library(sjPlot)
    filter(photocover != 100)
 
 ## Add protection level information to master df
- MasterDF_protection <- dplyr::left_join(MasterDF,
-                                         ProtectionDF,
-                                         by = "Site")
+ MasterDF_protection <- 
+   dplyr::left_join(MasterDF,
+                    ProtectionDF,
+                    by = "Site")
  
- 
-## Remove sites with only one survey
+## Remove sites with only one survey from 1997 to 2016
   master_df <- MasterDF_protection %>% 
     filter(!(Site %in% c("Chapel", 
-                        "Glovers_Control", 
-                        "Mitchel_Rock", 
-                        "Nicholas_Control", 
-                        "Pompian_Control", 
-                        "Tobacco_Caye"))
+                         "Glovers_Control", 
+                         "Mitchel_Rock", 
+                         "Nicholas_Control", 
+                         "Pompian_Control", 
+                         "Tobacco_Caye"))
            )
   
-## Check coral names 
+### EXPLORATORY ANALYSIS ------------   ####
+  
+## Recode and group coral gennus/names names to standarize names over the years
+## since no all categories were score every year
+  
+  ## Check coral names 
   unique(master_df$ID)
   
-### EXPLORATORY PLOTS ####
-  
-#recode coral species names to standarize names over the years
+  ## Recode coral names 
   master_df$newID <-
     dplyr::recode_factor(master_df$ID,
                          "Acropora.cervicornis" = "Acropora spp.",
@@ -166,21 +186,22 @@ library(sjPlot)
 ## Check new coral names again
   unique(master_df$newID_grouped)
   
-## Calculate cover for coral general by transect
+## Calculate cover for grouped coral genera by transect
  coral.genera.df <- 
     master_df %>%
       filter(Specific.Type %in% "Hard.coral") %>%
-        group_by(Year, Site, Fishing_level, Transect, Image.Code, newID_grouped) %>%
+        group_by(Year, Site, Protection_level, Transect, Image.Code, newID_grouped) %>%
           summarise(total_cover = sum(Cover, na.rm = TRUE)) %>%
-             group_by(Year, Site, Transect, Fishing_level, newID_grouped) %>%
+             group_by(Year, Site, Transect, Protection_level, newID_grouped) %>%
                 summarise(cover = mean(total_cover, na.rm = TRUE))
         
-#mean per site
+## mean and standard deviation per site
   mean.coral.genera.df <- coral.genera.df %>% 
-      group_by(Site, Year, Fishing_level, newID_grouped) %>% 
-        summarise(MeanCover = mean(cover, na.rm=TRUE))
+      group_by(Site, Year, Protection_level, newID_grouped) %>% 
+        summarise(MeanCover = mean(cover, na.rm=TRUE),
+                  SdCover = sd(cover, na.rm = TRUE))
 
-## order names alphabetically
+## order coral names alphabetically
   mean.coral.genera.df$newID_grouped <-
     factor(mean.coral.genera.df$newID_grouped,
            levels = c("Acropora spp.",
@@ -196,61 +217,9 @@ library(sjPlot)
                       "Siderastrea spp.",
                       "Other coral species")
     )
-  
-## Y axis break function
-  count <- 0
-  breaks_fun <- function(y) {
-    count <<- count + 1L
-    switch(
-      count,
-      c(1, 3, 5, 7, 9),
-      c(45, 55),
-      c(0, 50, 100),
-      seq(0, 8, 0.2)
-    )
-  }
-  
 
-##plot
-  coral.genera.plot_20 <- 
-    ggplot(data = mean.coral.genera.df,
-           aes(x = Year, 
-               y = MeanCover))+
-    facet_wrap(~ factor(newID_grouped), 
-               scales= "free_y")+
-    geom_smooth(aes(col = Fishing_level),
-                method = "loess",
-                formula = 'y ~ x',
-                span = 1,
-                alpha = 0.05)+
-     geom_point(aes(col = Fishing_level),
-               position = position_dodge(width = 0.75),alpha = 0.2) +
-    scale_y_continuous(limits = c(0,max(mean.coral.genera.df$MeanCover)), #change scale to overlay plots
-                       oob = squish) + #to avoid CI with negative values
-    scale_color_nejm()+
-    scale_fill_nejm()+
-     labs(x=NULL, 
-         y="Mean cover (%)")+
-    theme_bw() +
-    theme(legend.direction="horizontal",
-          legend.position="bottom",
-          axis.text.x=element_text(angle=0, hjust=0.5),
-          panel.grid = element_blank(),
-          strip.text = element_text(face = "italic"),
-          strip.background = element_rect(fill = "grey95")) +
-    labs(col ='Fishing level') 
-  coral.genera.plot_20
- 
-## Save plot
- ggsave("Figures/coral_genera_plot_scale20.png",
-        device =  "png",
-        width = 7.5,
-        height = 7, 
-        units ="in", 
-        dpi = 600)
-        
- 
- ## Recode and group specific Type to standarize over years 
+
+ ## Recode and major benthic groups to standarize over years 
  unique(master_df$Specific.Type)
  
   master_df$newType <- recode_factor(
@@ -273,9 +242,9 @@ library(sjPlot)
     "Tunicate" =  "Other invertebrates",
     "Zoanthid" = "Other invertebrates",
     "Sea.cucumber" = "Other invertebrates",
-    "CCA" = "CTB", # Combined, CCA, Turf, and Bare substrate
-    "Substrate" = "CTB",
-    "Dead" = "CTB",
+    "CCA" = "CTB", #Combined, CCA, Turf, and Bare substrate
+    "Substrate" = "CTB", #Assuming "substrate"in early years was CTB as this does not appear in the data
+    "Dead" = "CTB", #becasue dead is bare sustrate
     "Rubble" = "Substrate",
     "Sand.sediment" = "Substrate",
     "Bacterial.mat" = "Cyanobacteria",
@@ -283,21 +252,41 @@ library(sjPlot)
     "Unknown" = "Other",
     "Water" = "Other",
     "Equipment" = "Other",
-    "N.c" = "Other"
+    "N.c" = "Other" # not sure what was c
     )
   
   ## Calculate cover for benthic groups  by transect
   benthic.groups.df <- 
     master_df %>%
-     group_by(Year, Site, Fishing_level, Transect, Image.Code, newType) %>%
-      summarise(total_cover = sum(Cover, na.rm = TRUE)) %>%
-        group_by(Year, Site, Transect, Fishing_level, newType) %>%
-          summarise(cover = mean(total_cover, na.rm = TRUE))
+     group_by(Year, 
+              Site, 
+              Protection_level, 
+              Transect, 
+              Image.Code, 
+              newType) %>%
+      summarise(total_cover = sum(Cover, na.rm = TRUE),
+                enforcement = mean(Enforcement_score)) %>%
+        group_by(Year, 
+                 Site, 
+                 Transect, 
+                 Protection_level, 
+                 newType) %>%
+          summarise(cover = mean(total_cover, 
+                                 na.rm = TRUE),
+                    enforcement = mean(enforcement))
   
-  #mean per site and filter for key categories 
-  mean.benthic.groups.df <- benthic.groups.df %>% 
-     group_by(Site, Year, Fishing_level, newType) %>% 
-        summarise(MeanCover = mean(cover, na.rm=TRUE)) %>%
+  #mean an CI per site and filter for key categories 
+  mean.benthic.groups.df <- 
+    benthic.groups.df %>% 
+     group_by(Site, 
+              Year, 
+              Protection_level, 
+              newType) %>% 
+        summarise(MeanCover = mean(cover, na.rm=TRUE),
+                  SdCover = sd(cover, na.rm = TRUE),
+                  ci_cover = mean_cl_boot(cover, 
+                                          na.rm = TRUE),
+                  enforcement = mean(enforcement)) %>%
           filter (newType %in% c("Live coral",
                                  "Macroalgae",
                                  "CTB",
@@ -312,153 +301,131 @@ library(sjPlot)
                        "Gorgonian",
                        "Sponge"))
   
- #mean hard coral cover in 1997
+ #mean hard coral cover in 1997 and 2016 by protection status
   mean.benthic.groups.df %>%
-    filter (newType == "Live coral" &
-              Year == 1997) %>%
-    group_by(Year) %>%
-     summarise(mean(MeanCover),
-               sd(MeanCover))
-  
-  #mean hard coral cover in 2016
-  mean.benthic.groups.df %>%
-    filter (newType == "Live coral" &
-              Year == 2016) %>%
-    group_by(Year) %>%
-     summarise(mean(MeanCover),
-              sd(MeanCover))
-  
-##plot
-  benthic.groups.plot <- 
-    ggplot(data = mean.benthic.groups.df,
-           aes(x = Year, 
-               y = MeanCover))+
-    facet_wrap(~ factor(newType), 
-               scales= "free_y")+
-    geom_smooth(aes(col = Fishing_level),
-              method = "loess",
-              formula = 'y ~ x',
-              span = 1,
-              alpha = 0.05)+
-    geom_point(aes(col = Fishing_level),
-               position = position_dodge(width = 0.75),
-               alpha = 0.2) +
-    scale_y_continuous(limits = c(0, 
-                                  max(mean.benthic.groups.df$MeanCover)),
-                       oob = squish) + #to avoid CI with negative values
-    scale_color_nejm()+
-    scale_fill_nejm()+
-    labs(x=NULL, 
-         y="Mean Cover (%)")+
-    theme_bw()+
-    theme(legend.direction="vertical", 
-          legend.position= c(0.8,0.2),
-          legend.title = element_text (size = 10),
-          axis.text.x=element_text(angle=0, 
-                                   hjust=0.5),
-          panel.grid = element_blank(),
-          strip.background = element_rect(fill = "grey95"))+
-    labs(col ='Fishing level') 
-  
-  benthic.groups.plot
-  
-  ggsave("Figures/Fig.2_benthic_groups_plot_trends.png",
-         device =  "png",
-         width = 7,
-         height = 5, 
-         units ="in", 
-         dpi = 600)
-  
+    filter (newType == "Live coral") %>%
+     #filter (Year == 1997 ) %>%
+     filter (Year == 2016 ) %>%
+      group_by(Protection_level) %>%
+       summarise(.mean = mean(MeanCover),
+                 .sd = sd(MeanCover),
+                 .se = sd(MeanCover)/sqrt(length(MeanCover)))
 
-## Calculate cover for coral general by transect
-  
-  master_df$new_algae_id <- recode_factor(
-    master_df$ID,
-    "Amphiroa.species" = "branching calcareous",
-    "Branching.coraline" = "branching calcareous",
-    "Branching.coraline.antillarum" = "branching calcareous",
-    "Calcareous" = "branching calcareous",
-    "Dictyota" = "fleshy macroalgae",
-    "Encrusting.coraline" = "CT",
-    "Erect.rhodophyta" = "corticate",
-    "Fleshy_Macroalgae" = "fleshy macroalgae",
-    "Galaxaura.species" = "corticate",
-    "Halimeda" = "branching calcareous",
-    "Lobophora" = "corticate", 
-    "Macroalgae" = "fleshy macroalgae", 
-    "Padina.species" = "corticate",
-    "Turf.algae" = "CT",
-    "Ventricaria.species" = "corticate",
-    "Wrangelia" = "fleshy macroalgae",
-    "Crustose.turf.bare" = "CT",
-    "CCA" = "CT"
+## Recode macroalage in major functional groups
+  master_df$new_algae_id <- 
+    dplyr::recode_factor(
+      master_df$ID,
+      "Amphiroa.species" = "calcareous macroalgae",
+      "Branching.coraline" = "calcareous macroalgae",
+      "Branching.coraline.antillarum" = "calcareous macroalgae",
+      "Calcareous" = "calcareous macroalgae",
+      "Dictyota" = "fleshy macroalgae",
+      "Encrusting.coraline" = "crustose coralline + turf + bare",
+      "Erect.rhodophyta" = "corticated macroalgae",
+      "Fleshy_Macroalgae" = "fleshy macroalgae",
+      "Galaxaura.species" = "corticated macroalgae",
+      "Halimeda" = "calcareous macroalgae",
+      "Lobophora" = "corticated macroalgae", 
+      "Macroalgae" = "fleshy macroalgae", 
+      "Padina.species" = "corticated macroalgae",
+      "Turf.algae" = "crustose coralline + turf + bare",
+      "Ventricaria.species" = "corticated macroalgae",
+      "Wrangelia" = "fleshy macroalgae",
+      "Crustose.turf.bare" = "crustose coralline + turf + bare",
+      "CCA" = "crustose coralline + turf + bare",
+      "Substrate" = "crustose coralline + turf + bare",
+      "Dead" = "crustose coralline + turf + bare"
   )
   
+  #Calculate mean per transect
   algae.genera.df <- 
     master_df %>%
     filter(Specific.Type %in% c("Macroalgae", 
                                 "Coraline", 
-                                "Calcareous.algae", 
+                                "Calcareous.algae",
+                                "CCA",
                                 "Fleshy.macroalgae",
                                 "Halimeda",
-                                "CT"
+                                "CTB",
+                                "Dead",
+                                "Substrate"
                                 )) %>%
-    group_by(Year, Site, Fishing_level, Transect, Image.Code, new_algae_id) %>%
-      summarise(total_cover = sum(Cover, na.rm = TRUE)) %>%
-        group_by(Year, Site, Transect, Fishing_level, new_algae_id) %>%
+    group_by(Year, Site, Protection_level, Transect, Image.Code, new_algae_id) %>%
+      summarise(total_cover = sum(Cover, 
+                                  na.rm = TRUE)) %>%
+        group_by(Year, Site, Transect, Protection_level, new_algae_id) %>%
           summarise(cover = mean(total_cover, na.rm = TRUE))
   
   unique(algae.genera.df$new_algae_id)
   
   #mean per site
-  mean.algae.genera.df <- algae.genera.df %>% 
-    group_by(Site, Year, Fishing_level, new_algae_id) %>% 
-      summarise(MeanCover = mean(cover, na.rm=TRUE))
-                                     
-  ##plot
-  algae.genera.plot <- 
-    ggplot(data =  mean.algae.genera.df,
-           aes(x = Year, 
-               y = MeanCover))+
-    facet_wrap(~ factor(new_algae_id), 
-               scales= "free_y")+
-    geom_smooth(aes(fill = Fishing_level,
-                   col = Fishing_level),
-               method = "glm",
-               formula = 'y ~ x',
-               span = 1,
-               alpha = 0.05)+
-    geom_point(aes(fill = Fishing_level,
-                   col = Fishing_level),
-               position = position_dodge(width = 0.75),
-               alpha = 0.2) +
-    scale_y_continuous(#limits = c(0, max(mean.benthic.groups.df$MeanCover)),
-      oob = squish) + #to avoid CI with negative values
-    scale_color_nejm()+
-    scale_fill_nejm()+
-    labs(x=NULL, 
-         y="Mean cover of macroalgae (%)")+
-    theme_bw() +
-    theme(legend.direction="horizontal", 
-          legend.position= "bottom", #(0.8, 0.1),
-          axis.text.x=element_text(angle=0, hjust=0.5),
-          panel.grid = element_blank(),
-          strip.background = element_rect(fill = "grey95")) +
-    guides(fill=guide_legend(nrow=2, byrow=TRUE))
+  mean.algae.genera.df <- 
+    algae.genera.df %>% 
+      group_by(Site, 
+                Year, 
+                Protection_level, 
+                new_algae_id) %>% 
+      summarise(MeanCover = mean(cover, 
+                                 na.rm=TRUE),
+                ci_cover = mean_cl_boot(cover, 
+                                 na.rm = TRUE))
   
-  algae.genera.plot
+  #mean per site, year, and protection
+  protection.mean.algae.genera.df <- 
+    mean.algae.genera.df %>% 
+      group_by(Year, 
+              Protection_level, 
+              new_algae_id) %>% 
+      summarise(protection_mean = mean_cl_boot(MeanCover, 
+                                 na.rm=TRUE))
   
-
-  ### BLMER MODELS #####
+  ##Calcareous algae mean by year and protection level
+  calcareous.mean <- 
+    mean.algae.genera.df %>% 
+     group_by(Year,
+              Protection_level, 
+              new_algae_id) %>%
+        filter (new_algae_id == "calcareous macroalgae") %>%
+           summarise(.mean = mean(MeanCover),
+                     .sd = sd(MeanCover))
+  
+  ## fleshy macroalgae by year and protection level
+  fleshy.mean <- 
+    mean.algae.genera.df %>% 
+    group_by(Year, 
+             Protection_level, 
+             new_algae_id) %>%
+      filter (new_algae_id == "fleshy macroalgae") %>%
+       summarise(.mean = mean(MeanCover),
+                 .sd = sd(MeanCover))
+  
+  ## corticated macroalgae in 2016
+  corticated.mean <- 
+    algae.genera.df %>% 
+      filter (Year == 2016) %>%
+        group_by(Year,
+             Site,
+             Protection_level, 
+             new_algae_id) %>%
+    filter (new_algae_id == "corticated macroalgae") %>%
+    summarise(.mean = mean(cover),
+              .sd = sd(cover))
+    
+  
+  ### BLMER MODELS ----------- #####
   
   # Model Development 
-  ## 1. Read in Master data with covariates frame and join with benthic 
-  ### It contains Mean Cover, SE, Temperature, Protection & HII data     
+  ## 1. Read in Master data with covariates dataframe and join with benthic 
+  ### It contains TSA variables, Protection status, & HII data     
   Cover.Prot.Temp.HiiDF <- readr::read_csv("Data/Processed/Cover.Prot.Temp.HiiDF.csv")
+  
+  #NA to O for HII with lack of data
+  Cover.Prot.Temp.HiiDF$HII.Value[is.na(Cover.Prot.Temp.HiiDF$HII.Value)] <- 0
   
   ## summarize covariates by site, year, and HII - 50km
   Cover.Prot.Temp.HiiDF_summary <-
-    Cover.Prot.Temp.HiiDF[, c("Year", "Site", 
+    Cover.Prot.Temp.HiiDF[, c("Year", 
+                               "Site", 
                                "SSTA_Freq",
                                "SSTA_Freq_hist",
                                "TSA_Freq",
@@ -482,7 +449,20 @@ library(sjPlot)
   dim(Cover.Prot.Temp.HiiDF_summary)
   names(Cover.Prot.Temp.HiiDF_summary)
   
-  
+  ## See HII data by different buffers 
+  ggplot(Cover.Prot.Temp.HiiDF %>%
+           filter(Site != "Chapel" & #remove sites with only one survey
+                    Site != "Glovers_Control" &
+                    Site != "Nicholas_Control" &
+                    Site != "Tobacco_Caye" ),
+         aes(factor(Buffer), 
+             HII.Value)) + 
+    facet_wrap(~Site, ncol = 5) + 
+    geom_col() + 
+    theme_bw() +
+    labs(x= "buffer in km", 
+         y = "HII value") +
+    theme(panel.grid = element_blank())
   
   ### Join benthic.groups.df (from above) with covariates 
   ## use Site means
@@ -490,7 +470,7 @@ library(sjPlot)
     left_join (mean.benthic.groups.df,
                Cover.Prot.Temp.HiiDF_summary,
                 by = c("Site", "Year"))
-               
+  #Check union            
   dim(benthic.groups.df)
   dim(benthic.groups.df.cov)
   names(benthic.groups.df.cov)
@@ -498,20 +478,22 @@ library(sjPlot)
   #Check sites 
   unique(benthic.groups.df.cov$Site)
   
-  #Check benthic groups
+  #Check major benthic groups
   unique(benthic.groups.df.cov$newType)
   
- 
-  ##  2. Logit Transform MeanCover and Weight by SE    
-  LogitMasterDF <- benthic.groups.df.cov %>%
-    dplyr::mutate(Logit.Cover = car::logit(MeanCover,
+  ##  2. Logit Transform MeanCover   
+  LogitMasterDF <- 
+    benthic.groups.df.cov %>%
+      dplyr::mutate(Logit.Cover = car::logit(MeanCover,
                                            percents = TRUE)) 
+  ##Check formats
   str(LogitMasterDF)
   
-   ## 3. Rescale  predictor variables. We want to subtract the mean then divide by two standard deviations - I think we can do this with the arm::rescale() function
+  ## 3.. Rescale  predictor variables (arm package required)
+  ## We want to subtract the mean then divide by two standard deviations
   
   # first center year to help w/ model convergence
-  LogitMasterDF$centYear <- LogitMasterDF$Year-2005
+  LogitMasterDF$centYear <- LogitMasterDF$Year - 2005
   head(LogitMasterDF)
   
   # Rescale all predictor variables, including the centered year:
@@ -534,74 +516,82 @@ library(sjPlot)
   # Model Logit.Cover as the response, 
   #filtering for newType 
   
+  ## exploratory modesl with SSTA metric
+  # with SSTA_Freq_hist
   live.coral.hist.randsite <- 
     blme::blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq_hist+
             (1|Site), 
           REML=TRUE,
+          cov.prior = wishart,
           data=LogitMasterDF %>% 
               filter(newType == "Live coral")
           ) 
   
   summary(live.coral.hist.randsite)
   AIC(live.coral.hist.randsite)
-  plot_model(live.coral.hist.randsite)
+  sjPlot::plot_model(live.coral.hist.randsite)
   
 
-  # Let's make a model w/ Hii at 50, but an interaction b/w Year and Protection, 
-  # and adding a random effect for year as a factor:
+  # Model w/ Hii at 50, but an interaction b/w Year and Protection, 
+  # and adding a random effect for Site
   live.coral.int.hist.randsite.randyear <- 
     blmer(Logit.Cover~
-            RS.centYear*Fishing_level+
+            RS.centYear*Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq_hist+
-            (1|Site)+
-            (1|factorYear), 
+            (1|Site) +
+            (1|Year),
           REML =TRUE,
+          cov.prior = wishart,
           data=LogitMasterDF %>% 
-            filter(newType == "Live coral")) 
+                filter(newType == "Live coral")) 
   
   summary(live.coral.int.hist.randsite.randyear)
   AIC(live.coral.int.hist.randsite.randyear)
-  plot_model(live.coral.int.hist.randsite.randyear)
+  sjPlot::plot_model(live.coral.int.hist.randsite.randyear)
   car::vif(live.coral.int.hist.randsite.randyear)
   
-  # now let's try a model for SSTA_Freq_hist w/o int b/w year and prot.code:
+  # Model for SSTA_Freq_hist w/o int and protection status:
   live.coral.hist.randsite.randyear <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq_hist+
             (1|Site)+
-            (1|factorYear), 
+            (1|Year),
+          cov.prior = wishart,
           data=LogitMasterDF %>%
             filter(newType == "Live coral"), 
-          REML=TRUE) 
+            REML=TRUE) 
   
   summary(live.coral.hist.randsite.randyear) 
   AIC(live.coral.hist.randsite.randyear)
-  plot_model(live.coral.hist.randsite.randyear)
-  
+  sjPlot::plot_model(live.coral.hist.randsite.randyear)
+  plot(live.coral.hist.randsite.randyear)
   
   
   # Let's make the same model as above, but use SSTA_Freq instead of hist:
   live.coral.int.freq.randsite.randyear <- 
     blmer(Logit.Cover~
-            RS.centYear*Fishing_level+
+            RS.centYear+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq+
             (1|Site)+
-            (1|factorYear), 
+            (1|Year),
+          cov.prior = wishart,
           data=LogitMasterDF %>% 
             filter(newType == "Live coral"), 
           REML=TRUE) 
   
-  summary(live.coral.int.freq.randsite.randyear) 
-  plot_model(live.coral.int.freq.randsite.randyear)
+  summary(live.coral.int.freq.randsite.randyear)
+  AIC(live.coral.int.freq.randsite.randyear)
+  sjPlot::plot_model(live.coral.int.freq.randsite.randyear)
   
   # Abel suggested we try a model w/o interaction b/w year and prot.code - for SSTA_Freq:
   live.coral.freq.randsite.randyear <- 
@@ -612,35 +602,41 @@ library(sjPlot)
             RS.SSTA_Freq+
             (1|Site)+
             (1|factorYear), 
+          cov.prior = wishart,
           data=LogitMasterDF %>% 
             filter(newType == "Live coral"), 
           REML=TRUE) 
   
   summary(live.coral.freq.randsite.randyear) 
-  plot_model(live.coral.freq.randsite.randyear)
+  AIC(live.coral.freq.randsite.randyear)
+  sjPlot::plot_model(live.coral.freq.randsite.randyear)
+
   
   # same model as above, but without year as a random effect:
   live.coral.freq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq+
             (1|Site), 
+          cov.prior = wishart,
           data=LogitMasterDF %>% 
             filter(newType == "Live coral"), 
           REML=TRUE) 
   
   summary(live.coral.freq.randsite) 
+  AIC(live.coral.freq.randsite) 
   plot_model(live.coral.freq.randsite)
   
   # model with interaction b/w year and prot, same as above otherwise:
   live.coral.int.freq.randsite <- 
     blmer(Logit.Cover~
-            RS.centYear*Fishing_level+
+            RS.centYear*Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq+
-            (1|Site), 
+            (1|Site),
+          cov.prior = wishart,
           data=LogitMasterDF %>%
             filter(newType == "Live coral"), 
           REML=TRUE) 
@@ -648,27 +644,65 @@ library(sjPlot)
   summary(live.coral.int.freq.randsite)
   plot_model(live.coral.int.freq.randsite)
   
-  # model with TSA_Freq NOT SSTA_Freq
+  # Exploratory models with TSA_Freq metric
   live.coral.TSAfreq.randsite <- 
-    bglmer(Logit.Cover~
-            RS.centYear+
-            Fishing_level+
-            RS.Hii.50+
-            RS.TSA_Freq+
-            (1|Site), 
+    blmer(Logit.Cover~
+          RS.centYear + 
+           Protection_level+
+           #enforcement + try enforcement level instead of protection status no both as they are correlated
+           RS.Hii.50+
+           RS.TSA_Freq+
+            (1|Site),
+           cov.prior = wishart,
           data=LogitMasterDF %>% 
             filter(newType == "Live coral"),
           REML=TRUE) 
   
   summary(live.coral.TSAfreq.randsite)
   AIC(live.coral.TSAfreq.randsite)
-  plot_model(live.coral.TSAfreq.randsite)
+  sjPlot::plot_model(live.coral.TSAfreq.randsite)
+  car::vif(live.coral.TSAfreq.randsite)
+  
+  # model with interaction of TSA_Freq * Hii 
+  livecoral.TSAfreq_Hii.randsite <- 
+    blmer(Logit.Cover ~
+            RS.centYear + 
+            Protection_level+
+            RS.TSA_Freq * RS.Hii.50 +
+            (1|Site),
+            cov.prior = wishart,
+          data=LogitMasterDF %>% 
+            filter(newType == "Live coral"),
+          REML=TRUE) 
+  
+  summary(live.coral.TSAfreq_Hii.randsite)
+  AIC(live.coral.TSAfreq_Hii.randsite)
+  sjPlot::plot_model(live.coral.TSAfreq_Hii.randsite)
+  car::vif(live.coral.TSAfreq_Hii.randsite)
+  
+  # model with interaction TSA_freq * Protection_status
+  live.coral.TSAfreq_protection.randsite <- 
+    blmer(Logit.Cover ~
+            RS.centYear + 
+            RS.Hii.50 +
+            RS.TSA_Freq * Protection_level+
+            (1|Site),
+          cov.prior = wishart,
+          data=LogitMasterDF %>% 
+            filter(newType == "Live coral"),
+          REML=TRUE) 
+  
+  summary(live.coral.TSAfreq_protection.randsite)
+  AIC(live.coral.TSAfreq_protection.randsite)
+  sjPlot::plot_model(live.coral.TSAfreq_protection.randsite)
+  car::vif(live.coral.TSAfreq_protection.randsite)
+  
   
   # model with TSA_Freq_hist
   live.coral.TSAhist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_hist+
             (1|Site), 
@@ -678,13 +712,13 @@ library(sjPlot)
   
   summary(live.coral.TSAhist.randsite) 
   AIC(live.coral.TSAhist.randsite)
-  plot_model(live.coral.TSAhist.randsite)
+  sjPlot::plot_model(live.coral.TSAhist.randsite)
   
   # model with TSA_Freq_btw_surveys
   live.coral.TSAfreq.surv.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_btw_surveys +
             (1|Site), 
@@ -694,7 +728,7 @@ library(sjPlot)
   
   summary(live.coral.TSAfreq.surv.randsite) 
   AIC(live.coral.TSAfreq.surv.randsite)
-  plot_model(live.coral.TSAfreq.surv.randsite)
+  sjPlot::plot_model(live.coral.TSAfreq.surv.randsite)
   
   ### Compare models
   anova(live.coral.hist.randsite, 
@@ -707,7 +741,7 @@ library(sjPlot)
       live.coral.TSAhist.randsite, 
       live.coral.TSAfreq.surv.randsite)
   
-  ### Hard coral models comparison for paper
+  ### Hard coral models comparison for paper using TSA Freq
   hard_coral_mod_anova <-
     anova(live.coral.TSAfreq.randsite, 
         live.coral.TSAhist.randsite, 
@@ -719,7 +753,7 @@ library(sjPlot)
   
   # Test for VIF (variance inflation factor) 
   
-  # use function 'vif' to calculate variance inflation factors for each variable in model
+  # use function 'vif' to calculate variance inflation factors for each variable in model using vif >3 as cutoff
   car::vif(live.coral.hist.randsite) #yes collinearity
   car::vif(live.coral.int.hist.randsite.randyear)  
   car::vif(live.coral.hist.randsite.randyear)
@@ -732,14 +766,14 @@ library(sjPlot)
   
   
   ##  **5.**  Model other Specific.Types  
-  ## Now we make models for the other Specific.Types of interest using the convention from Hard.coral.freq.randsite.randyear
+  ## Make models for the other Specific.Types of interest using the convention from Hard.coral.TSA_freq.randsite
   
   # models for Macroalgae:
   # using SSTA_freq
   Macro.freq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq+
             (1|Site), 
@@ -755,7 +789,7 @@ library(sjPlot)
   Macro.hist.randsite <- 
     blmer(Logit.Cover ~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq_hist+
             (1|Site), 
@@ -770,7 +804,7 @@ library(sjPlot)
   Macro.TSAfreq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq+
             (1|Site), 
@@ -786,7 +820,7 @@ library(sjPlot)
   Macro.TSAhist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_hist+
             (1|Site), 
@@ -801,7 +835,7 @@ library(sjPlot)
   Macro.TSAfreq.surv.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_btw_surveys+
             (1|Site), 
@@ -832,7 +866,7 @@ library(sjPlot)
   CTB.freq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq+
             (1|Site), 
@@ -847,7 +881,7 @@ library(sjPlot)
   CTB.hist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq_hist+
             (1|Site), 
@@ -862,7 +896,7 @@ library(sjPlot)
   CTB.TSAfreq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq+
             (1|Site), 
@@ -877,7 +911,7 @@ library(sjPlot)
   CTB.TSAhist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_hist+
             (1|Site), 
@@ -892,7 +926,7 @@ library(sjPlot)
   CTB.TSAfreq.surv.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_btw_surveys+
             (1|Site), 
@@ -903,12 +937,12 @@ library(sjPlot)
   summary(CTB.TSAfreq.surv.randsite)
   plot_model(CTB.TSAfreq.surv.randsite)
   
-  ## AIC
+  ## Compare models with AIC
   anova(CTB.freq.randsite,
-      CTB.hist.randsite,
-      CTB.TSAfreq.randsite,
-      CTB.TSAhist.randsite,
-      CTB.TSAfreq.surv.randsite)
+        CTB.hist.randsite,
+        CTB.TSAfreq.randsite,
+        CTB.TSAhist.randsite,
+        CTB.TSAfreq.surv.randsite)
   
   ctb_mod_anova <-
     anova(CTB.TSAfreq.randsite, 
@@ -917,12 +951,12 @@ library(sjPlot)
   write.csv(ctb_mod_anova, 
             "Data/Processed/ctb_mod_anova.csv")
   
-  # model for gorgonian (formerly soft coral)
+  # model for gorgonian (soft coral)
   # using SSTA_freq
   gorg.freq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq+
             (1|Site), 
@@ -937,7 +971,7 @@ library(sjPlot)
   gorg.hist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq_hist+
             (1|Site), 
@@ -951,7 +985,7 @@ library(sjPlot)
   gorg.TSAfreq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq+
             (1|Site), 
@@ -967,7 +1001,7 @@ library(sjPlot)
   gorg.TSAhist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_hist+
             (1|Site), 
@@ -982,7 +1016,7 @@ library(sjPlot)
   gorg.TSAfreq.surv.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_btw_surveys+
             (1|Site), 
@@ -1012,7 +1046,7 @@ library(sjPlot)
   Sponge.freq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq+
             (1|Site), 
@@ -1027,7 +1061,7 @@ library(sjPlot)
   Sponge.hist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.SSTA_Freq_hist+
             (1|Site), 
@@ -1043,7 +1077,7 @@ library(sjPlot)
   Sponge.TSAfreq.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq+
             (1|Site), 
@@ -1058,7 +1092,7 @@ library(sjPlot)
   Sponge.TSAhist.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_hist+
             (1|Site), 
@@ -1073,7 +1107,7 @@ library(sjPlot)
   Sponge.TSAfreq.surv.randsite <- 
     blmer(Logit.Cover~
             RS.centYear+
-            Fishing_level+
+            Protection_level+
             RS.Hii.50+
             RS.TSA_Freq_btw_surveys+
             (1|Site), 
@@ -1098,74 +1132,7 @@ library(sjPlot)
   write.csv(sponge_mod_anova, 
             "Data/Processed/sponge_mod_anova.csv")
   
-  ## 5. Compare AIC values  
-  
-  ### **5a.** Plot response versus predictor(s)  
-   # plot live coral versus temp - TSAFreq.randsite
-  live.coral.tsa.plot <- 
-      LogitMasterDF %>% 
-          filter(newType == "Live coral") %>% 
-            ggplot(aes(x = TSA_Freq,
-                       y = boot::inv.logit( ## back transform to percentage
-                              predict (live.coral.TSAfreq.randsite,
-                                      type = "response"))*100))+ 
-              geom_point(color = "grey20", 
-                         size = 3,
-                         alpha = 0.5)+
-              geom_smooth(method="glm",
-                          color = "darkblue",
-                          fill = "blue",
-                          alpha = 0.1)+
-                  labs(title = "HARD CORAL",
-                        x = "TSA Frequency", 
-                       y = "Predicted cover (%)")+
-                scale_y_continuous(limits=c(0,30))+
-                theme_bw()+
-                theme(panel.grid = element_blank(),
-                      axis.text = element_text(size = 14),
-                      axis.title = element_text(size = 14),
-                      plot.title = element_text(hjust = 0.5))
-   live.coral.tsa.plot
-  
-  # plot gorgonian versus TSA freq
-   
-   gorg.coral.temp.plot <- 
-     LogitMasterDF %>% 
-     filter(newType == "Gorgonian") %>% 
-     ggplot(aes(x = TSA_Freq,
-                y = boot::inv.logit( ## back transform to percentage
-                  predict (gorg.TSAfreq.randsite,
-                           type = "response"))*100))+ 
-     geom_point(color = "grey20", 
-                size = 3,
-                alpha = 0.5)+
-     geom_smooth(method="glm",
-                 color = "darkblue",
-                 fill = "blue",
-                 alpha = 0.1)+
-     labs(title = "GORGONIAN",
-          x = "TSA Frequency", 
-          y = NULL)+
-     scale_y_continuous(limits=c(0,30))+
-     theme_bw()+
-     theme(panel.grid = element_blank(),
-           axis.text = element_text(size = 14),
-           axis.title = element_text(size = 14),
-           plot.title = element_text(hjust = 0.5))
-   gorg.coral.temp.plot
-   
-  coral_gorg_tsa <-
-    cowplot::plot_grid(live.coral.tsa.plot,
-                      gorg.coral.temp.plot)
-   
-   cowplot::save_plot("Figures/Fig.4 coral_gorg_tsa.png",
-                      coral_gorg_tsa,
-                      base_height = 4,
-                      base_width = 6.5)
-                        
-                      
-                      
- 
+
   
   ###  **6.**  Test for Homoscedascicity  
   #resid vs fitted
@@ -1217,7 +1184,7 @@ library(sjPlot)
   # fit the model to these simulated data. 
   sim.fit <- blmer(null.sim ~
                      RS.centYear +
-                     Fishing_level+
+                     Protection_level+
                      RS.Hii.50+
                      RS.TSA_Freq+
                      (1|Site), 
@@ -1226,126 +1193,8 @@ library(sjPlot)
                    REML = TRUE) 
   plot_model(sim.fit)
 
-  
-  ### COEFFICIENT PLOTS ####
-  ## **10.** Format Effect Sizes Plot   
-  
-  # hard coral
-  hard.coral.plot <- 
-    sjPlot::plot_model(live.coral.TSAfreq.randsite,
-                show.values = TRUE, 
-                show.p=TRUE,
-                type ="est",
-                axis.labels = c("TSA Freq", 
-                                "HII - 50 Km", 
-                                "Fishing vs. \nNo Fishing", 
-                                "Year"), #labels are in order from bottom to top!!
-                axis.title = " ",
-                title="HARD CORAL",
-                color = "bw",
-                vline.color = "grey") + 
-    theme_bw() + 
-    theme(axis.text = element_text(size = 14),
-          axis.title = element_text(size = 12),
-          plot.title = element_text(hjust = 0.5,
-                                    size = 14),
-          panel.grid = element_blank())
-  
-  # macroalgae
-  macro.plot <- 
-    sjPlot::plot_model(Macro.TSAfreq.randsite,
-                 show.values = TRUE, 
-                 show.p=TRUE,
-                 type ="est", 
-                 axis.labels = c(" ", " ", " ", " "), 
-                 axis.title = " ",
-                 title="MACROALGAE",
-                 color = "bw",
-                 vline.color = "grey") + 
-    theme_bw() + 
-    theme(axis.text = element_text(size = 14),
-          axis.title = element_text(size = 12),
-          plot.title = element_text(hjust = 0.5,
-                                    size = 14),
-          panel.grid = element_blank())
-  
-  # CTB 
-  ctb.plot <- 
-    sjPlot::plot_model(CTB.TSAfreq.randsite,
-                  show.values = TRUE, 
-                  show.p=TRUE,
-                  type ="est",
-                  axis.labels = c(" ", " ", " "," "),
-                  axis.title = "Coefficient Estimates",
-                  title="CTB",
-                  color = "bw",
-                  vline.color = "grey")+
-    theme_bw() + 
-    theme(axis.text = element_text(size = 14),
-          axis.title = element_text(size = 12),
-          plot.title = element_text(hjust = 0.5,
-                                    size = 14),
-          panel.grid = element_blank())
-  
-  # gorgonian
-  gorg.plot <- 
-    sjPlot::plot_model(gorg.TSAfreq.randsite,
-                  show.values = TRUE, 
-                  show.p=TRUE,
-                  type ="est",
-                  axis.labels = c(" "," ", " "," "), #labels are in order from bottom to top!!
-                  axis.title = " ",
-                  title="GORGONIAN",
-                  color = "bw",
-                  vline.color = "grey") + 
-    theme_bw() + 
-    theme(axis.text = element_text(size = 14),
-          axis.title = element_text(size = 12),
-          plot.title = element_text(hjust = 0.5,
-                                    size = 14),
-          panel.grid = element_blank())
-  
-  # sponge
-  sponge.plot <- 
-    sjPlot::plot_model(Sponge.TSAfreq.randsite,
-                   show.values = TRUE, 
-                   show.p=TRUE,
-                   type = "est",
-                   p.threshold = 0.05,
-                   axis.labels =c(" ", " ", " "," "), #labels are in order from bottom to top!!
-                   axis.title = " ",
-                   title="SPONGE",
-                   color = "bw",
-                   vline.color = "grey") + 
-    theme_bw() + 
-    theme(axis.text = element_text(size = 14),
-          axis.title = element_text(size = 12),
-          plot.title = element_text(hjust = 0.5, 
-                                    size = 14),
-          panel.grid = element_blank())
-  
-  
-  # can i use cowplot to combine?
-  effects.combo.plot <- 
-    cowplot::plot_grid(hard.coral.plot, 
-                       macro.plot,
-                       ctb.plot, 
-                       gorg.plot, 
-                       sponge.plot, 
-                       ncol=5,
-                       rel_widths = c(1.5,1,1,1,1))
-  
-  # view plots combined
-  effects.combo.plot
-  
-  # save as PNG
-  cowplot::save_plot("Figures/Fig.3_effects.combo.plot_v3.png", 
-                     effects.combo.plot, 
-                     base_width = 10, 
-                     base_height = 5,
-                     )
- 
-  ### BLMER MODEL RESULTS ####
+
+  ### BLMER MODEL RESULTS --------- ####
   ## **11.** Make Model Output Table    
   
   # unformatted table 
@@ -1404,7 +1253,6 @@ library(sjPlot)
                                             show.intercept = TRUE)
    write.csv(sponge.mod.data, 
                   "Data/Processed/sponge.mod.df.csv")
-  
   
   ## **12.** Plot Model Estimates with Data   
   ### **12a.** Save effect size estimates into a data frame  
@@ -1492,195 +1340,8 @@ library(sjPlot)
                                              `0.40` = "2009",
                                              `0.80` = "2016"))
   
-  
-  ### **12b.** Use effects value dfs (from above) to plot  estimates  
-   # hard coral
-  hard.coral.year.plot <-
-      ggplot(LogitMasterDF %>% 
-               filter(newType =="Live coral"))+
-         #geom_point(data = hc_x_year, 
-         #           aes(x = as.numeric(Year), 
-         #               y = boot::inv.logit(fit)*100), 
-         #           color="blue")+
-         geom_line(data=hc_x_year, 
-                    aes(x = as.numeric(Year), 
-                        y = boot::inv.logit(fit)*100), 
-                    color = "darkblue")+
-        geom_ribbon(data = hc_x_year, 
-                      aes(x = as.numeric(Year), 
-                          ymin = boot::inv.logit(lower)*100, 
-                          ymax = boot::inv.logit(upper)*100), 
-                      alpha=0.1, 
-                      fill="blue")+
-          geom_point(aes(x= Year, 
-                          y = MeanCover),
-                   color = "grey20",
-                   size = 3,
-                   alpha = 0.5)+
-          labs(title = "HARD CORALS",
-               x= NULL, 
-               y="Hard Coral Cover (%)")+
-    theme_bw() +
-    theme (panel.grid = element_blank(),
-           plot.title = element_text(hjust = 0.5),
-           axis.title = element_text (size = 14),
-           axis.text = element_text (size = 14))
-    
-  hard.coral.year.plot
-  
-  # Macrolage
-  macroalgae.year.plot <-
-    ggplot(LogitMasterDF %>% 
-             filter(newType =="Macroalgae"))+
-    #geom_point(data = hc_x_year, 
-    #           aes(x = as.numeric(Year), 
-    #               y = boot::inv.logit(fit)*100), 
-    #           color="blue")+
-    geom_line(data=macro_x_year, 
-              aes(x = as.numeric(Year), 
-                  y = boot::inv.logit(fit)*100), 
-              color = "darkblue")+
-    geom_ribbon(data = macro_x_year, 
-                aes(x = as.numeric(Year), 
-                    ymin = boot::inv.logit(lower)*100, 
-                    ymax = boot::inv.logit(upper)*100), 
-                alpha=0.1, 
-                fill="blue")+
-    geom_point(aes(x= Year, 
-                   y = MeanCover),
-               color = "grey20",
-               size = 3,
-               alpha = 0.5)+
-    labs(title = "MACROALGAE",
-         x=NULL, 
-         y="Macroalgae Cover (%)")+
-    scale_y_continuous(limits = c(0,80))+
-    theme_bw() +
-    theme (panel.grid = element_blank(),
-           plot.title = element_text(hjust = 0.5),
-           axis.title = element_text (size = 14),
-           axis.text = element_text (size = 14))
-  macroalgae.year.plot
-  
- #CTB
-  ctb.year.plot <-
-    ggplot(LogitMasterDF %>% 
-             filter(newType =="CTB"))+
-    #geom_point(data = ctb_x_year, 
-    #           aes(x = as.numeric(Year), 
-    #               y = boot::inv.logit(fit)*100), 
-    #           color="blue")+
-    geom_line(data= ctb_x_year, 
-              aes(x = as.numeric(Year), 
-                  y = boot::inv.logit(fit)*100), #back transform to %
-              color = "darkblue")+
-    geom_ribbon(data = ctb_x_year, 
-                aes(x = as.numeric(Year), 
-                    ymin = boot::inv.logit(lower)*100, #back transform to %
-                    ymax = boot::inv.logit(upper)*100), #back transform to %
-                alpha=0.1, 
-                fill="blue")+
-    geom_point(aes(x= Year, 
-                   y = MeanCover),
-               color = "grey20",
-               size = 3,
-               alpha = 0.5)+
-    scale_y_continuous(limits = c(0,80))+
-    labs(title = "CTB",
-         x=NULL, 
-         y="CTB Cover (%)")+
-    theme_bw() +
-    theme (panel.grid = element_blank(),
-           plot.title = element_text(hjust = 0.5),
-           axis.title = element_text (size = 14),
-           axis.text = element_text (size = 14))
-  ctb.year.plot
-  
-  #Gorgonian
-  gorg.year.plot <-
-    ggplot(LogitMasterDF %>% 
-             filter(newType =="Gorgonian"))+
-    #geom_point(data = ctb_x_year, 
-    #           aes(x = as.numeric(Year), 
-    #               y = boot::inv.logit(fit)*100), 
-    #           color="blue")+
-    geom_line(data= gorg_x_year, 
-              aes(x = as.numeric(Year), 
-                  y = boot::inv.logit(fit)*100), #back transform to %
-              color = "darkblue")+
-    geom_ribbon(data = gorg_x_year, 
-                aes(x = as.numeric(Year), 
-                    ymin = boot::inv.logit(lower)*100, #back transform to %
-                    ymax = boot::inv.logit(upper)*100), #back transform to %
-                alpha=0.1, 
-                fill="blue")+
-    geom_point(aes(x= Year, 
-                   y = MeanCover),
-               color = "grey20",
-               size = 3,
-               alpha = 0.5)+
-    scale_y_continuous(limits = c(0,32))+
-    labs(title = "GORGONIAN",
-         x=NULL, 
-         y="Gorgonian Cover (%)")+
-    theme_bw() +
-    theme (panel.grid = element_blank(),
-           plot.title = element_text(hjust = 0.5),
-           axis.title = element_text (size = 14),
-           axis.text = element_text (size = 14))
-  gorg.year.plot
-  
-  #Sponge
-  sponge.year.plot <-
-    ggplot(LogitMasterDF %>% 
-             filter(newType =="Gorgonian"))+
-    #geom_point(data = ctb_x_year, 
-    #           aes(x = as.numeric(Year), 
-    #               y = boot::inv.logit(fit)*100), 
-    #           color="blue")+
-    geom_line(data= sponge_x_year, 
-              aes(x = as.numeric(Year), 
-                  y = boot::inv.logit(fit)*100), #back transform to %
-              color = "darkblue")+
-    geom_ribbon(data = sponge_x_year, 
-                aes(x = as.numeric(Year), 
-                    ymin = boot::inv.logit(lower)*100, #back transform to %
-                    ymax = boot::inv.logit(upper)*100), #back transform to %
-                alpha=0.1, 
-                fill="blue")+
-    geom_point(aes(x= Year, 
-                   y = MeanCover),
-               color = "grey20",
-               size = 3,
-               alpha = 0.5)+
-    labs(title = "SPONGE",
-         x=NULL, 
-         y="SPONGE Cover (%)")+
-    scale_y_continuous(limits = c(0,32))+
-    theme_bw() +
-    theme (panel.grid = element_blank(),
-           plot.title = element_text(hjust = 0.5),
-           axis.title = element_text (size = 14),
-           axis.text = element_text (size = 14))
-  sponge.year.plot
-  
-  
-  ## Combine all plots in one
-  prediction_combo_plot <-
-      cowplot::plot_grid(hard.coral.year.plot,
-                     macroalgae.year.plot,
-                     ctb.year.plot,
-                     gorg.year.plot,
-                     sponge.year.plot)
-  
-  cowplot::save_plot("Figures/Fig S4. Predicted_benthic_groups.png",
-            prediction_combo_plot, 
-            ncol=3,
-            base_height = 7,
-            base_width = 3)
-  
-  
-  ## MDS ####
+
+  ## MDS ------------ ####
   ## regroup by ID making sure appears in every year
   master_df$newID_grouped <-
     dplyr::recode_factor(master_df$ID,
@@ -1745,15 +1406,15 @@ library(sjPlot)
                          "Calcareous" = "Calcareous algae",
                          "Dictyota" = "Fleshy macroalgae",
                          "Encrusting.coraline" = "CTB",
-                         "Erect.rhodophyta" = "Corticate algae",
+                         "Erect.rhodophyta" = "Corticated algae",
                          "Fleshy_Macroalgae" = "Fleshy macroalgae",
-                         "Galaxaura.species" = "Corticate algae",
+                         "Galaxaura.species" = "Corticated algae",
                          "Halimeda" = "Calcareous algae",
-                         "Lobophora" = "Corticate algae", 
+                         "Lobophora" = "Corticated algae", 
                          "Macroalgae" = "Fleshy macroalgae", 
-                         "Padina.species" = "Corticate algae",
+                         "Padina.species" = "Corticated algae",
                          "Turf.algae" = "CTB",
-                         "Ventricaria.species" = "Corticate algae",
+                         "Ventricaria.species" = "Corticated algae",
                          "Wrangelia" = "Fleshy macroalgae",
                          "Crustose.turf.bare" = "CTB",
                          "CCA" = "CTB",
@@ -1825,7 +1486,7 @@ library(sjPlot)
            MeanCover, 
            fill = 0)
   
-  #meam of Orbicella
+  #mean of Orbicella
   mean.master_df_mds_wide %>%  
     filter (Year == 2016) %>% 
      select (`Orbicella spp.`) %>% 
@@ -1859,6 +1520,7 @@ library(sjPlot)
   FG.community.mds # stress = 0.0976 
   
   # call the plot function on the x-y coords of the metaMDS output makes an MDS ordination plot:
+  #clear plots first
   plot(FG.community.mds$points) 
   
   # look at the loadings for the MDS1 and MDS2 
@@ -1906,118 +1568,6 @@ library(sjPlot)
   
   #Plot
   plot(mds_env)
-  
-  
-  ## plot points and color by Year
-  mds.year.protection <- 
-    ggplot(MDS_xy,
-           aes(- MDS1, MDS2,
-               color = as.factor(Year),
-               fill = as.factor(Year)))+
-    geom_hline(yintercept = 0, lty = 3, col = "grey50")+ 
-    geom_vline(xintercept = 00, lty = 3, col = "grey50")+
-    geom_point(aes(pch = Fishing_level),
-               cex = 3,
-               alpha = 0.6)+
-    geom_segment(x = 0, xend = mds_env$vectors$arrows[1,1]/2, 
-                y = 0, yend = mds_env$vectors$arrows[1,2]/2,
-                arrow = arrow(length = unit(0.1,"in")),
-                col= "grey70") +
-    annotate("text",  x = mds_env$vectors$arrows[1,1]/1.7,
-                    y = mds_env$vectors$arrows[1,2]/1.7,
-             color = "grey20",
-             size = 3,
-             label = "Year")+
-    geom_segment(x = 0, xend = mds_env$vectors$arrows[2,1]/2, 
-                 y = 0, yend = mds_env$vectors$arrows[2,2]/2,
-                 arrow = arrow(length = unit(0.1,"in")),
-                 col= "grey70") +
-    annotate("text",  x = mds_env$vectors$arrows[2,1]/1.7,
-             y = mds_env$vectors$arrows[2,2]/1.7,
-             color = "grey20",
-             size = 3,
-             label = "TSA Freq")+
-    geom_segment(x = 0, xend = mds_env$vectors$arrows[3,1]/2, 
-                 y = 0, yend = mds_env$vectors$arrows[3,2]/2,
-                 arrow = arrow(length = unit(0.1,"in")),
-                 col= "grey70") +
-    annotate("text",  x = mds_env$vectors$arrows[3,1]/1.7,
-             y = mds_env$vectors$arrows[3,2]/1.7,
-             color = "grey20",
-             size = 3,
-             label = "HII_50km")+
-   scale_shape_manual(values = c(21,22))+
-    theme_bw()+
-    theme(panel.grid = element_blank(),
-          axis.title = element_text(size = 10),
-          axis.text = element_text(size = 10))+
-    scale_color_nejm()+
-    scale_fill_nejm(guide = 'none')+
-    stat_ellipse(alpha = 0.3,
-                 type = "t",
-                 level = 0.95) +
-    guides(color = guide_legend(title = "Year"),
-           shape = guide_legend(title = "Fishing level")) +
-    scale_x_continuous(limits = c(-1.1,1.2)) +
-    #scale_y_continuous(limits = c(-1,0) +
-    annotate("text", 
-             x =1, y = 0.8,
-             color = "grey20",
-             size = 3,
-             label = paste ("stress = ", 
-                            round(FG.community.mds$stress,3)))
-  
-  mds.year.protection
-  
-  
-  mds.species <- ggplot(MDS_species, 
-                        aes(- MDS1, MDS2,
-                            color = "                "),
-                        guide = 'none')+
-    geom_point()+
-    geom_hline(yintercept = 0, lty = 3, col = "grey50")+ 
-    geom_vline(xintercept = 00, lty = 3, col = "grey50")+
-    theme_bw()+
-    theme(panel.grid = element_blank(),
-          legend.position = "right",
-          legend.title = element_blank(),
-          axis.title = element_text(size = 10),
-          axis.text = element_text(size = 10))+
-    geom_segment(data = MDS_species , 
-                 aes(x = 0, 
-                     xend = -MDS1, 
-                     y = 0, 
-                     yend = MDS2,
-                     color = species), 
-                 arrow = arrow(length = unit(0.15, "cm")), 
-                 lwd = 0.2,
-                 colour="grey") +
-    geom_text(data = MDS_species, 
-              aes(x = -MDS1*1, 
-                  y = MDS2*1.2, 
-                  label = species), 
-              position = "nudge",
-              size = 3,
-              colour = "grey20",
-              check_overlap = FALSE)+ ## this prevent overlaping names
-    scale_color_manual(values = "#FFFFFF") +
-    scale_x_continuous(limits = c(-1.1,1.2)) +
-    scale_y_continuous(limits = c(-0.6,0.6)) 
-  
-  mds.species
-  
-  mds_plot <- gridExtra::grid.arrange (mds.year.protection, 
-                                       mds.species, 
-                                       ncol = 1)
-  mds_plot
-  
-  ggsave("./Figures/Fig.4_mds_plot.png",
-         mds_plot,
-         device = "png",
-         width = 6,
-         height = 6.5, 
-         units ="in", 
-         dpi = 600)
   
   
   ### Calculating different aspects of MDS - helps us interpret data!
@@ -2089,25 +1639,30 @@ library(sjPlot)
                            p.stars = "",
                            group = "")
   
+  #Test also without and with interaction between TSA_Freq, Protection_level and TSA_freq and check AIC
   for (i in unique(coral.genera.df.cov$newID_grouped)) {
-    coral.general.model <- 
+    coral.genera.model <- 
         blme::blmer(Logit.Cover~
                   RS.centYear+
-                  Fishing_level+
+                  Protection_level+
                   RS.Hii.50+
                   RS.TSA_Freq+
+                  #RS.TSA_Freq*RS.Hii.50+ #Interaction between TSA_freq and HII
+                  #RS.TSA_Freq*Protection_level+ #Interaction between TSA_freq and Protection
                   (1|Site), 
                 REML = TRUE,
                 data = coral.genera.df.cov %>% 
                   filter(newID_grouped == i)
         )
   
-      print(summary(coral.general.model))
-      print(sjPlot::plot_model(coral.general.model,
+      print(summary(coral.genera.model))
+      print(paste("AIC:", AIC(coral.genera.model)))
+      print(car::vif(coral.genera.model))
+      print(sjPlot::plot_model(coral.genera.model,
                      title = i)+
               theme_bw())
       
-      model_result <- sjPlot::get_model_data(coral.general.model, 
+      model_result <- sjPlot::get_model_data(coral.genera.model, 
                              type = "est",
                              show.r2 = TRUE,
                              show.intercept = TRUE) %>%
@@ -2123,10 +1678,10 @@ library(sjPlot)
                              c(i, rep('',6)),  
                              model_result,
                              c("Marginal R2", 
-                               performance::r2(coral.general.model)$R2_marginal, 
+                               performance::r2(coral.genera.model)$R2_marginal, 
                                rep('',5)),
                              c("Conditional R2", 
-                               performance::r2(coral.general.model)$R2_conditional, 
+                               performance::r2(coral.genera.model)$R2_conditional, 
                                rep('',5))
                              )
   }
@@ -2134,6 +1689,845 @@ library(sjPlot)
   write_csv(model_results, "Data/Processed/coral_genera_blmer_results.csv")
   
   
+  ## BLME for algae functional groups ####
+  algae.groups <- 
+    algae.genera.df %>%
+      filter(new_algae_id != "crustose coralline + turf + bare")
+  
+  # Join mean coral genera with covariates
+  algae.groups.cov <-
+    left_join (algae.groups,
+               Cover.Prot.Temp.HiiDF_summary,
+               by = c("Site", "Year"))
+  
+  names(algae.groups)
+  
+  ##Logit Transform MeanCover and Weight by SE    
+  algae.groups.df.cov <- 
+    algae.groups.cov %>%
+      dplyr::mutate(Logit.Cover = car::logit(cover,
+                                           percents = TRUE)) 
+  
+  ##  Rescale predictor variable and center year
+  algae.groups.df.cov$centYear <- algae.groups.df.cov$Year-2005
+  
+  # Rescale all predictor variables, including the centered year:
+  algae.groups.df.cov$RS.centYear <- arm::rescale(algae.groups.df.cov$centYear)
+  algae.groups.df.cov$RS.Hii.50 <- arm::rescale(algae.groups.df.cov$HII_50km)
+  algae.groups.df.cov$RS.TSA_Freq <- arm::rescale(algae.groups.df.cov$TSA_Freq)
+  
+  ## Run models for coral taxa and create table with results
+  model_results <- tibble (term = "",
+                           estimate = "",
+                           std.error = "",
+                           statistic = "",
+                           p.value = "",
+                           p.stars = "",
+                           group = "")
+  
+  #Test also without and with interaction between TSA_Freq, Protection_level and TSA_freq and check AIC
+  for (i in unique(algae.groups.df.cov$new_algae_id)) {
+    algae.groups.model <- 
+      blme::blmer(Logit.Cover~
+                    RS.centYear+
+                    Protection_level+
+                    RS.Hii.50+
+                    RS.TSA_Freq+
+                    #RS.TSA_Freq*RS.Hii.50+ #Interaction between TSA_freq and HII
+                    #RS.TSA_Freq*Protection_level+ #Interaction between TSA_freq and Protection
+                    (1|Site), 
+                  REML = TRUE,
+                  data = algae.groups.df.cov %>% 
+                    filter(new_algae_id == i)
+      )
+    
+    print(summary(algae.groups.model))
+    print(paste("AIC:", AIC(algae.groups.model)))
+    print(car::vif(algae.groups.model))
+    print(sjPlot::plot_model(algae.groups.model,
+                             title = i)+
+            theme_bw())
+    
+    model_result <- sjPlot::get_model_data(algae.groups.model, 
+                                           type = "est",
+                                           show.r2 = TRUE,
+                                           show.intercept = TRUE) %>%
+      dplyr::select(term, 
+                    estimate, 
+                    std.error, 
+                    statistic, 
+                    p.value, 
+                    p.stars, 
+                    group)
+    
+    model_results <- rbind(model_results, 
+                           c(i, rep('',6)),  
+                           model_result,
+                           c("Marginal R2", 
+                             performance::r2(algae.groups.model)$R2_marginal, 
+                             rep('',5)),
+                           c("Conditional R2", 
+                             performance::r2(algae.groups.model)$R2_conditional, 
+                             rep('',5))
+    )
+  }
+  
+  write_csv(model_results, "Data/Processed/algae_groups_blmer_results.csv")
+  
+  
+  ##### ---------   FIGURES   ---------   #####
+  
+  ## Fig. 2 - plot benthic groups ####
+  benthic.groups.plot <- 
+    ggplot(data = mean.benthic.groups.df,
+           aes(x = Year, 
+               y = MeanCover))+
+    facet_wrap(~ factor(newType), 
+               scales= "free_y") +
+    geom_smooth(aes(col = Protection_level,
+                    linetype = Protection_level,
+                    fill = Protection_level),
+                method = "loess",
+                formula = 'y ~ x',
+                span = 1,
+                alpha = 0.07) +
+    geom_point(aes(col = Protection_level,
+                   shape = Protection_level,
+                   fill = Protection_level),
+               position = position_dodge(width = 1),
+               alpha = 0.2,
+               size = 2.3) +
+    scale_y_continuous(limits = c(0, 
+                                  max(mean.benthic.groups.df$MeanCover)),
+                       oob = squish) + #to avoid CI with negative values
+    scale_linetype_manual(values = c(6,1)) +
+    scale_shape_manual(values = c(22,21)) +
+    scale_color_nejm() +
+    scale_fill_nejm() +
+    labs(x=NULL, 
+         y="Mean Cover (%)") +
+    theme_bw()+
+    theme(legend.direction="vertical", 
+          legend.position= c(0.8,0.2),
+          legend.title = element_text (size = 10),
+          axis.text.x=element_text(angle=0, 
+                                   hjust=0.5),
+          panel.grid = element_blank(),
+          strip.background = element_rect(fill = "grey95")) +
+    labs(col ='Protection level',
+         linetype = 'Protection level',
+         shape = 'Protection level',
+         fill = 'Protection level') 
+  
+  benthic.groups.plot
+  
+  ggsave("Figures/Fig.2_benthic_groups_plot_trends_updated.png",
+         device =  "png",
+         width = 7,
+         height = 5, 
+         units ="in", 
+         dpi = 600)
+
+  
+  ### Fig. 3 - Coefficient Plot ####
+  
+  # hard coral
+  hard.coral.plot <- 
+    sjPlot::plot_model(live.coral.TSAfreq.randsite,
+                       show.values = TRUE, 
+                       show.p=TRUE,
+                       type ="est",
+                       axis.labels = c("TSA Freq", 
+                                       "HII - 50 Km", 
+                                       "Fishing vs. \nNo Fishing", 
+                                       "Year"), #labels are in order from bottom to top!!
+                       axis.title = " ",
+                       title="HARD CORAL",
+                       color = "bw",
+                       vline.color = "grey") + 
+    theme_bw() + 
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 12),
+          plot.title = element_text(hjust = 0.5,
+                                    size = 14),
+          panel.grid = element_blank())
+  
+  # macroalgae
+  macro.plot <- 
+    sjPlot::plot_model(Macro.TSAfreq.randsite,
+                       show.values = TRUE, 
+                       show.p=TRUE,
+                       type ="est", 
+                       axis.labels = c(" ", " ", " ", " "), 
+                       axis.title = " ",
+                       title="MACROALGAE",
+                       color = "bw",
+                       vline.color = "grey") + 
+    theme_bw() + 
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 12),
+          plot.title = element_text(hjust = 0.5,
+                                    size = 14),
+          panel.grid = element_blank())
+  
+  # CTB 
+  ctb.plot <- 
+    sjPlot::plot_model(CTB.TSAfreq.randsite,
+                       show.values = TRUE, 
+                       show.p=TRUE,
+                       type ="est",
+                       axis.labels = c(" ", " ", " "," "),
+                       axis.title = "Coefficient Estimates",
+                       title="CTB",
+                       color = "bw",
+                       vline.color = "grey")+
+    theme_bw() + 
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 12),
+          plot.title = element_text(hjust = 0.5,
+                                    size = 14),
+          panel.grid = element_blank())
+  
+  # gorgonian
+  gorg.plot <- 
+    sjPlot::plot_model(gorg.TSAfreq.randsite,
+                       show.values = TRUE, 
+                       show.p=TRUE,
+                       type ="est",
+                       axis.labels = c(" "," ", " "," "), #labels are in order from bottom to top!!
+                       axis.title = " ",
+                       title="GORGONIAN",
+                       color = "bw",
+                       vline.color = "grey") + 
+    theme_bw() + 
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 12),
+          plot.title = element_text(hjust = 0.5,
+                                    size = 14),
+          panel.grid = element_blank())
+  
+  # sponge
+  sponge.plot <- 
+    sjPlot::plot_model(Sponge.TSAfreq.randsite,
+                       show.values = TRUE, 
+                       show.p=TRUE,
+                       type = "est",
+                       p.threshold = 0.05,
+                       axis.labels =c(" ", " ", " "," "), #labels are in order from bottom to top!!
+                       axis.title = " ",
+                       title="SPONGE",
+                       color = "bw",
+                       vline.color = "grey") + 
+    theme_bw() + 
+    theme(axis.text = element_text(size = 14),
+          axis.title = element_text(size = 12),
+          plot.title = element_text(hjust = 0.5, 
+                                    size = 14),
+          panel.grid = element_blank())
+  
+  
+  # can i use cowplot to combine?
+  effects.combo.plot <- 
+    cowplot::plot_grid(hard.coral.plot, 
+                       macro.plot,
+                       ctb.plot, 
+                       gorg.plot, 
+                       sponge.plot, 
+                       ncol=5,
+                       rel_widths = c(1.5,1,1,1,1))
+  
+  # view plots combined
+  effects.combo.plot
+  
+  # save as PNG
+  cowplot::save_plot("Figures/Fig.3_effects.combo.plot_v3.png", 
+                     effects.combo.plot, 
+                     base_width = 10, 
+                     base_height = 5,
+  )
+  
+  ### Fig. 4 - Plot response versus predictor(s)  ####
+  # plot live coral versus temp - TSAFreq.randsite
+  live.coral.tsa.plot <- 
+    LogitMasterDF %>% 
+    filter(newType == "Live coral") %>% 
+    ggplot(aes(x = TSA_Freq,
+               y = boot::inv.logit( ## back transform to percentage
+                 predict (live.coral.TSAfreq.randsite,
+                          type = "response"))*100))+ 
+    geom_point(color = "grey20", 
+               size = 3,
+               alpha = 0.5)+
+    geom_smooth(method="glm",
+                color = "darkblue",
+                fill = "blue",
+                alpha = 0.1)+
+    labs(title = "HARD CORAL",
+         x = "TSA Frequency", 
+         y = "Predicted cover (%)")+
+    scale_y_continuous(limits=c(0,30))+
+    theme_bw()+
+    theme(panel.grid = element_blank(),
+          axis.text = element_text(size = 14),
+          axis.title = element_text(size = 14),
+          plot.title = element_text(hjust = 0.5))
+  live.coral.tsa.plot
+  
+  # plot gorgonian versus TSA freq
+  
+  gorg.coral.temp.plot <- 
+    LogitMasterDF %>% 
+    filter(newType == "Gorgonian") %>% 
+    ggplot(aes(x = TSA_Freq,
+               y = boot::inv.logit( ## back transform to percentage
+                 predict (gorg.TSAfreq.randsite,
+                          type = "response"))*100))+ 
+    geom_point(color = "grey20", 
+               size = 3,
+               alpha = 0.5)+
+    geom_smooth(method="glm",
+                color = "darkblue",
+                fill = "blue",
+                alpha = 0.1)+
+    labs(title = "GORGONIAN",
+         x = "TSA Frequency", 
+         y = NULL)+
+    scale_y_continuous(limits=c(0,30))+
+    theme_bw()+
+    theme(panel.grid = element_blank(),
+          axis.text = element_text(size = 14),
+          axis.title = element_text(size = 14),
+          plot.title = element_text(hjust = 0.5))
+  gorg.coral.temp.plot
+  
+  coral_gorg_tsa <-
+    cowplot::plot_grid(live.coral.tsa.plot,
+                       gorg.coral.temp.plot)
+  
+  cowplot::save_plot("Figures/Fig.4 coral_gorg_tsa.png",
+                     coral_gorg_tsa,
+                     base_height = 4,
+                     base_width = 6.5)
+  
+  
+  
+  ## Fig. 5 - plot coral genera ####
+  coral.genera.plot <- 
+    ggplot(data = mean.coral.genera.df,
+           aes(x = Year, 
+               y = MeanCover))+
+    facet_wrap(~ factor(newID_grouped), 
+               scales= "free_y")+
+    geom_smooth(aes(col = Protection_level,
+                    linetype = Protection_level,
+                    fill = Protection_level),
+                method = "loess",
+                formula = 'y ~ x',
+                span = 1,
+                alpha = 0.07,
+                se = TRUE)+
+    geom_point(aes(shape = Protection_level,
+                   fill = Protection_level),
+               position = position_dodge(width = 1),
+               alpha = 0.2,
+               size = 2) +
+    coord_cartesian(ylim = c(0, NA)) +  #to avoid CI with negative values
+    expand_limits(y = c(0,6)) + #for differents y scales
+    scale_linetype_manual(values = c(6,1)) +
+    scale_shape_manual(values = c(22,21)) +
+    scale_color_nejm() +
+    scale_fill_nejm() +
+    labs(x=NULL, 
+         y="Mean Cover (%)")+
+    theme_bw() +
+    theme(legend.direction="horizontal",
+          legend.position="bottom",
+          axis.text.x=element_text(angle=0, 
+                                   hjust=0.5),
+          panel.grid = element_blank(),
+          strip.text = element_text(face = "italic"),
+          strip.background = element_rect(fill = "grey95")) +
+    labs(col ='Protection level',
+         linetype = 'Protection level',
+         shape = 'Protection level',
+         fill = 'Protection level') 
+  
+  coral.genera.plot
+  
+  ## Save plot
+  ggsave("Figures/Fig.5_coral_genera_plot_trend_updated.png",
+         device =  "png",
+         width = 7.5,
+         height = 6.5, 
+         units ="in", 
+         dpi = 600)
+  
+  ##Fig. 6 plot algae groups ####
+  algae.groups.plot <- 
+    ggplot(data =  mean.algae.genera.df %>%
+             filter(new_algae_id != "crustose coralline + turf + bare"),
+           aes(x = Year, 
+               y = MeanCover))+
+    facet_wrap(~ factor(new_algae_id), 
+               scales= "free_y",
+               dir = "h")+
+    geom_smooth(aes(fill = Protection_level,
+                    col = Protection_level,
+                    linetype = Protection_level),
+                method = "loess",
+                formula = 'y ~ x',
+                span = 1,
+                alpha = 0.05)+
+    geom_point(aes(fill = Protection_level,
+                   col = Protection_level,
+                   shape = Protection_level),
+               position = position_dodge(width = 0.75),
+               alpha = 0.2,
+               size = 2.3) +
+    coord_cartesian(ylim = c(0, NA))+
+    expand_limits(y = c(0,15)) + #for differents y scales
+    scale_linetype_manual(values = c(6,1)) +
+    scale_shape_manual(values = c(22,21)) +
+    scale_color_nejm()+
+    scale_fill_nejm()+
+    labs(x=NULL, 
+         y="Mean Cover (%)")+
+    theme_bw() +
+    theme(legend.direction="horizontal", 
+          legend.position= "bottom", #(0.8, 0.1),
+          axis.text.x=element_text(angle=0, hjust=0.5),
+          panel.grid = element_blank(),
+          strip.background = element_rect(fill = "grey95")) +
+    guides(fill=guide_legend(nrow=2, byrow=TRUE)) +
+    labs(col ='Protection level',
+         linetype = 'Protection level',
+         shape = 'Protection level',
+         fill = 'Protection level') 
+  
+  algae.groups.plot
+  
+  ggsave("Figures/Fig.6_algae_groups_plot_trends.png",
+         device =  "png",
+         width = 7,
+         height = 3, 
+         units ="in", 
+         dpi = 600)
+  
+  
+  ## Fig. 7 - mds plot #####
+  mds.year.protection <- 
+    ggplot(MDS_xy,
+           aes(- MDS1, MDS2, #add negative to x axis to reverse axis and have later years to the right
+               color = as.factor(Year),
+               fill = as.factor(Year)))+
+    geom_hline(yintercept = 0, lty = 3, col = "grey50")+ 
+    geom_vline(xintercept = 0, lty = 3, col = "grey50")+
+    geom_point(aes(pch = Fishing_level),
+               cex = 3,
+               alpha = 0.6)+
+    geom_segment(x = 0, xend = -mds_env$vectors$arrows[1,1]/2, 
+                 y = 0, yend = mds_env$vectors$arrows[1,2]/2,
+                 arrow = arrow(length = unit(0.1,"in")),
+                 col= "grey70") +
+    annotate("text",  x = -mds_env$vectors$arrows[1,1]/1.7,
+             y = mds_env$vectors$arrows[1,2]/1.7,
+             color = "grey20",
+             size = 3,
+             label = "Year")+
+    geom_segment(x = 0, xend = -mds_env$vectors$arrows[2,1]/2, 
+                 y = 0, yend = mds_env$vectors$arrows[2,2]/2,
+                 arrow = arrow(length = unit(0.1,"in")),
+                 col= "grey70") +
+    annotate("text",  x = -mds_env$vectors$arrows[2,1]/1.7,
+             y = mds_env$vectors$arrows[2,2]/1.7,
+             color = "grey20",
+             size = 3,
+             label = "TSA Freq")+
+    geom_segment(x = 0, xend = -mds_env$vectors$arrows[3,1]/2, 
+                 y = 0, yend = mds_env$vectors$arrows[3,2]/2,
+                 arrow = arrow(length = unit(0.1,"in")),
+                 col= "grey70") +
+    annotate("text",  x = -mds_env$vectors$arrows[3,1]/1.7,
+             y = mds_env$vectors$arrows[3,2]/1.7,
+             color = "grey20",
+             size = 3,
+             label = "HII_50km")+
+    scale_shape_manual(values = c(22,21))+
+    theme_bw()+
+    theme(panel.grid = element_blank(),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10))+
+    scale_color_nejm()+
+    scale_fill_nejm(guide = 'none')+
+    stat_ellipse(alpha = 0.3,
+                 type = "t",
+                 level = 0.95) +
+    annotate("text",  x = -0.8, y = 0.45, color = "grey20", size = 3, label = "1997")+ #add year
+    annotate("text",  x = -0.8, y = -0.25, color = "grey20", size = 3, label = "1999")+ #add year
+    annotate("text",  x = -0.8, y = -0.75, color = "grey20", size = 3, label = "2005")+ #add year
+    annotate("text",  x = 0.55, y = -0.4, color = "grey20", size = 3, label = "2009")+ #add year
+    annotate("text",  x = 0.55, y = -0.75, color = "grey20", size = 3, label = "2016")+ #add year
+    guides(color = guide_legend(title = "Year"),
+           shape = guide_legend(title = "Protection level")) +
+    scale_x_continuous(limits = c(-1.1,1.2)) +
+    annotate("text", 
+             x =1, y = 0.8,
+             color = "grey20",
+             size = 3,
+             label = paste ("stress = ", 
+                            round(FG.community.mds$stress,3)))
+  
+  mds.year.protection
+  
+  
+  mds.species <- ggplot(MDS_species, 
+                        aes(- MDS1, MDS2,
+                            color = "                     "),
+                        guide = 'none')+
+    geom_point()+
+    geom_hline(yintercept = 0, lty = 3, col = "grey50")+ 
+    geom_vline(xintercept = 0, lty = 3, col = "grey50")+
+    theme_bw()+
+    theme(panel.grid = element_blank(),
+          legend.position = "right",
+          legend.title = element_blank(),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10))+
+    geom_segment(data = MDS_species , 
+                 aes(x = 0, 
+                     xend = -MDS1, 
+                     y = 0, 
+                     yend = MDS2,
+                     color = species), 
+                 arrow = arrow(length = unit(0.15, "cm")), 
+                 lwd = 0.2,
+                 colour="grey") +
+    geom_text(data = MDS_species, 
+              aes(x = -MDS1*1, 
+                  y = MDS2*1.2, 
+                  label = species), 
+              position = "nudge",
+              size = 3,
+              colour = "grey20",
+              check_overlap = FALSE)+ ## this prevent overlaping names
+    scale_color_manual(values = "#FFFFFF") +
+    scale_x_continuous(limits = c(-1.1,1.2)) +
+    scale_y_continuous(limits = c(-0.6,0.6))  
+  
+  mds.species
+  
+  mds_plot <- gridExtra::grid.arrange (mds.year.protection, 
+                                       mds.species, 
+                                       ncol = 1,
+                                       clip = "on")
+  mds_plot
+  
+  ggsave("./Figures/Fig.7_mds_plot_updated.png",
+         mds_plot,
+         device = "png",
+         width = 6,
+         height = 6.5, 
+         units ="in", 
+         dpi = 600)
+  
+  ### Fig. S4 Predicted benthic groups plot   ####
+  # hard coral
+  hard.coral.year.plot <-
+    ggplot(LogitMasterDF %>% 
+             filter(newType =="Live coral"))+
+    #geom_point(data = hc_x_year, 
+    #           aes(x = as.numeric(Year), 
+    #               y = boot::inv.logit(fit)*100), 
+    #           color="blue")+
+    geom_line(data=hc_x_year, 
+              aes(x = as.numeric(Year), 
+                  y = boot::inv.logit(fit)*100), 
+              color = "darkblue")+
+    geom_ribbon(data = hc_x_year, 
+                aes(x = as.numeric(Year), 
+                    ymin = boot::inv.logit(lower)*100, 
+                    ymax = boot::inv.logit(upper)*100), 
+                alpha=0.1, 
+                fill="blue")+
+    geom_point(aes(x= Year, 
+                   y = MeanCover),
+               color = "grey20",
+               size = 3,
+               alpha = 0.5)+
+    labs(title = "HARD CORALS",
+         x= NULL, 
+         y="Hard Coral Cover (%)")+
+    theme_bw() +
+    theme (panel.grid = element_blank(),
+           plot.title = element_text(hjust = 0.5),
+           axis.title = element_text (size = 14),
+           axis.text = element_text (size = 14))
+  
+  hard.coral.year.plot
+  
+  # Macrolage
+  macroalgae.year.plot <-
+    ggplot(LogitMasterDF %>% 
+             filter(newType =="Macroalgae"))+
+    #geom_point(data = hc_x_year, 
+    #           aes(x = as.numeric(Year), 
+    #               y = boot::inv.logit(fit)*100), 
+    #           color="blue")+
+    geom_line(data=macro_x_year, 
+              aes(x = as.numeric(Year), 
+                  y = boot::inv.logit(fit)*100), 
+              color = "darkblue")+
+    geom_ribbon(data = macro_x_year, 
+                aes(x = as.numeric(Year), 
+                    ymin = boot::inv.logit(lower)*100, 
+                    ymax = boot::inv.logit(upper)*100), 
+                alpha=0.1, 
+                fill="blue")+
+    geom_point(aes(x= Year, 
+                   y = MeanCover),
+               color = "grey20",
+               size = 3,
+               alpha = 0.5)+
+    labs(title = "MACROALGAE",
+         x=NULL, 
+         y="Macroalgae Cover (%)")+
+    scale_y_continuous(limits = c(0,80))+
+    theme_bw() +
+    theme (panel.grid = element_blank(),
+           plot.title = element_text(hjust = 0.5),
+           axis.title = element_text (size = 14),
+           axis.text = element_text (size = 14))
+  macroalgae.year.plot
+  
+  #CTB
+  ctb.year.plot <-
+    ggplot(LogitMasterDF %>% 
+             filter(newType =="CTB"))+
+    #geom_point(data = ctb_x_year, 
+    #           aes(x = as.numeric(Year), 
+    #               y = boot::inv.logit(fit)*100), 
+    #           color="blue")+
+    geom_line(data= ctb_x_year, 
+              aes(x = as.numeric(Year), 
+                  y = boot::inv.logit(fit)*100), #back transform to %
+              color = "darkblue")+
+    geom_ribbon(data = ctb_x_year, 
+                aes(x = as.numeric(Year), 
+                    ymin = boot::inv.logit(lower)*100, #back transform to %
+                    ymax = boot::inv.logit(upper)*100), #back transform to %
+                alpha=0.1, 
+                fill="blue")+
+    geom_point(aes(x= Year, 
+                   y = MeanCover),
+               color = "grey20",
+               size = 3,
+               alpha = 0.5)+
+    scale_y_continuous(limits = c(0,80))+
+    labs(title = "CTB",
+         x=NULL, 
+         y="CTB Cover (%)")+
+    theme_bw() +
+    theme (panel.grid = element_blank(),
+           plot.title = element_text(hjust = 0.5),
+           axis.title = element_text (size = 14),
+           axis.text = element_text (size = 14))
+  ctb.year.plot
+  
+  #Gorgonian
+  gorg.year.plot <-
+    ggplot(LogitMasterDF %>% 
+             filter(newType =="Gorgonian"))+
+    #geom_point(data = ctb_x_year, 
+    #           aes(x = as.numeric(Year), 
+    #               y = boot::inv.logit(fit)*100), 
+    #           color="blue")+
+    geom_line(data= gorg_x_year, 
+              aes(x = as.numeric(Year), 
+                  y = boot::inv.logit(fit)*100), #back transform to %
+              color = "darkblue")+
+    geom_ribbon(data = gorg_x_year, 
+                aes(x = as.numeric(Year), 
+                    ymin = boot::inv.logit(lower)*100, #back transform to %
+                    ymax = boot::inv.logit(upper)*100), #back transform to %
+                alpha=0.1, 
+                fill="blue")+
+    geom_point(aes(x= Year, 
+                   y = MeanCover),
+               color = "grey20",
+               size = 3,
+               alpha = 0.5)+
+    scale_y_continuous(limits = c(0,32))+
+    labs(title = "GORGONIAN",
+         x=NULL, 
+         y="Gorgonian Cover (%)")+
+    theme_bw() +
+    theme (panel.grid = element_blank(),
+           plot.title = element_text(hjust = 0.5),
+           axis.title = element_text (size = 14),
+           axis.text = element_text (size = 14))
+  gorg.year.plot
+  
+  #Sponge
+  sponge.year.plot <-
+    ggplot(LogitMasterDF %>% 
+             filter(newType =="Sponge"))+
+    #geom_point(data = ctb_x_year, 
+    #           aes(x = as.numeric(Year), 
+    #               y = boot::inv.logit(fit)*100), 
+    #           color="blue")+
+    geom_line(data= sponge_x_year, 
+              aes(x = as.numeric(Year), 
+                  y = boot::inv.logit(fit)*100), #back transform to %
+              color = "darkblue")+
+    geom_ribbon(data = sponge_x_year, 
+                aes(x = as.numeric(Year), 
+                    ymin = boot::inv.logit(lower)*100, #back transform to %
+                    ymax = boot::inv.logit(upper)*100), #back transform to %
+                alpha=0.1, 
+                fill="blue")+
+    geom_point(aes(x= Year, 
+                   y = MeanCover),
+               color = "grey20",
+               size = 3,
+               alpha = 0.5)+
+    labs(title = "SPONGE",
+         x=NULL, 
+         y="SPONGE Cover (%)")+
+    scale_y_continuous(limits = c(0,32))+
+    theme_bw() +
+    theme (panel.grid = element_blank(),
+           plot.title = element_text(hjust = 0.5),
+           axis.title = element_text (size = 14),
+           axis.text = element_text (size = 14))
+  sponge.year.plot
+  
+  
+  ## Combine all plots in one
+  prediction_combo_plot <-
+    cowplot::plot_grid(hard.coral.year.plot,
+                       macroalgae.year.plot,
+                       ctb.year.plot,
+                       gorg.year.plot,
+                       sponge.year.plot)
+  
+  cowplot::save_plot("Figures/Fig S4. Predicted_benthic_groups.png",
+                     prediction_combo_plot, 
+                     ncol=3,
+                     base_height = 7,
+                     base_width = 3)
+  
+  
+  ## Fig. S5 plot Benthic groups with lines ####
+  benthic.groups.line.plot <- 
+    ggplot(data = mean.benthic.groups.df,
+           aes(x = Year, 
+               y = MeanCover))+
+    facet_grid(factor(newType) ~ Protection_level,
+               scales= "free_y",
+               labeller = labeller(.cols = label_value))+
+    geom_point(aes(col = Protection_level,
+                   shape = Protection_level,
+                   fill = Protection_level),
+               position = position_dodge2(width = 1),
+               alpha = 0.2,
+               size = 2) +
+    geom_line(aes(group = Site,
+                  col = Protection_level,
+                  linetype = Protection_level),
+              position = position_dodge(width = 1),
+              alpha = 0.5) +
+    geom_linerange(aes(group = Site,
+                       col = Protection_level,
+                       ymin = ci_cover$ymin,
+                       ymax = ci_cover$ymax),
+                   position = position_dodge(width = 1),
+                   alpha = 0.7)+
+    scale_linetype_manual(values = c(5,1)) +
+    scale_shape_manual(values = c(22,21)) +
+    scale_color_nejm() +
+    coord_cartesian(ylim = c(0, NA)) +  #to avoid CI with negative values
+    expand_limits(y = c(0,10)) + #for differents y scales
+    labs(x=NULL, 
+         y="Mean Cover (%)") +
+    theme_bw()+
+    theme(legend.direction="horizontal", 
+          legend.position= "bottom",
+          legend.title = element_text (size = 10),
+          axis.text.x=element_text(angle=0, 
+                                   hjust=0.5),
+          panel.grid = element_blank(),
+          strip.background = element_rect(fill = "grey95")) +
+    labs(col ='Protection level',
+         linetype = 'Protection level',
+         shape = 'Protection level',
+         fill = 'Protection level') 
+  
+  benthic.groups.line.plot
+  
+  ggsave("Figures/Fig.S5_benthic_groups_line_trends.png",
+         device =  "png",
+         width = 5,
+         height = 7, 
+         units ="in", 
+         dpi = 600)
+  
+
+  ## Fig. S6 OPTIONAL plot algae groups by line
+  algae.groups.line.plot <- 
+    ggplot(data =  mean.algae.genera.df %>%
+             filter(new_algae_id != "crustose coralline + turf + bare"),
+           aes(x = Year, 
+               y = MeanCover))+
+    facet_grid(factor(new_algae_id) ~ Protection_level,
+               scales= "free_y") +
+    geom_line(aes(group = Site,
+                  col = Protection_level,
+                  linetype = Protection_level),
+              alpha = 0.7,
+              position = position_dodge(width = 1)) +
+    geom_linerange(aes(group = Site,
+                       col = Protection_level,
+                       ymin = ci_cover$ymin, 
+                       ymax = ci_cover$ymax),
+                   alpha = 0.7,
+                   position = position_dodge(width = 1)) +
+    geom_point(aes(fill = Protection_level,
+                   col = Protection_level,
+                   shape = Protection_level),
+               position = position_dodge2(width = 1),
+               alpha = 0.5,
+               size = 2.3) +
+    coord_cartesian(ylim = c(0, NA))+
+    expand_limits(y = c(0,16)) + #for differents y scales
+    scale_linetype_manual(values = c(6,1)) +
+    scale_shape_manual(values = c(22,21)) +
+    scale_color_nejm()+
+    scale_fill_nejm()+
+    labs(x=NULL, 
+         y="Mean Cover (%)")+
+    theme_bw() +
+    theme(legend.direction="horizontal", 
+          legend.position= "none", #(0.8, 0.1),
+          axis.text.x=element_text(angle=0, hjust=0.5),
+          panel.grid = element_blank(),
+          strip.background = element_rect(fill = "grey95")) +
+    guides(fill=guide_legend(nrow=2, byrow=TRUE)) +
+    labs(col ='Protection level',
+         linetype = 'Protection level',
+         shape = 'Protection level',
+         fill = 'Protection level') 
+  
+  algae.groups.line.plot
+  
+  ggsave("Figures/Fig.S6_algae_groups_line_plot.png",
+         device =  "png",
+         width = 6,
+         height = 6.5, 
+         units ="in", 
+         dpi = 600)
+  
+  
+#### THE END #####
   
   
   
