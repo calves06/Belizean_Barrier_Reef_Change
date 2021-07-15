@@ -525,6 +525,7 @@
             RS.Hii.50+
             RS.SSTA_Freq_hist+
             (1|Site), 
+            #resid.prior = point(0.9),
           REML=TRUE,
           cov.prior = wishart,
           data=LogitMasterDF %>% 
