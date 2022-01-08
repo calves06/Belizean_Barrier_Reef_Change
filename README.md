@@ -1,4 +1,4 @@
-# Belizean_Barrier_Reef_Change
+# Belizean Barrier Reef Change
 Pubic repository containing the code, data, and figures associated with Alves et al. (2022): Twenty years of change in benthic communities across the Belizean Barrier Reef.  
 DOI: https://doi.org/10.1101/2021.03.15.435443  
 
