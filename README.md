@@ -1,12 +1,14 @@
 # Belizean Barrier Reef Change
-Pubic repository containing the code, data, and figures associated with Alves et al. (2022): Twenty years of change in benthic communities across the Belizean Barrier Reef.  
-DOI: https://doi.org/10.1101/2021.03.15.435443  
+## Pubic repository containing the code, data, and figures associated with Alves et al. (2022): Twenty years of change in benthic communities across the Belizean Barrier Reef.  
+## DOI: https://doi.org/10.1101/2021.03.15.435443  
 
-**Authors:** Catherine Alves, Abel Valdivia, Richard B. Aronson, Nadia Bood, Karl D. Castillo, Courtney Cox, Clare Fieseler, Zachary Locklear, Melanie McField, Laura Mudge, James Umbanhowar, John F. Bruno
+### **Authors:** Catherine Alves, Abel Valdivia, Richard B. Aronson, Nadia Bood, Karl D. Castillo, Courtney Cox, Clare Fieseler, Zachary Locklear, Melanie McField, Laura Mudge, James Umbanhowar, John F. Bruno  
+
+### Correspondence: Dr. Catherine Alves (alves.catie@gmail.com) and Dr. John F. Bruno (jbruno@unc.edu)  
 
 **Abstract:** Disease, storms, ocean warming, and pollution have caused the mass mortality of reef-building corals across the Caribbean over the last four decades. Subsequently, stony corals have been replaced by macroalgae, bacterial mats, and other invertebrates including soft corals and sponges, causing changes to the functioning of coral reef ecosystems. Here we describe changes in the absolute cover of benthic reef taxa including corals, sponges, and algae at 15 forereef sites (12-15m depth) across the Belizean Barrier Reef (BBR) from 1997 to 2016. We also tested whether Marine Protected Areas (MPAs) in which fishing was prohibited (but likely still occurred) mitigated these changes. Additionally, we determined whether ocean temperature anomalies (measured via satellite) or local human impacts (estimated using the Human Influence Index (HII), were related to changes in benthic community structure. We observed a reduction in the cover of reef-building corals including of the long-lived, massive coral *Orbicella* spp. (from 13 to 2 %), and an increase in fleshy and corticate macroalgae across most sites. These and other changes to reef benthic communities were unaffected by local protection. The covers of hard-coral taxa, including *Acropora* spp., *M. cavernosa*, *Orbicella* spp., and *Porites* spp., were negatively related to the frequency of ocean temperature anomalies. Only gorgonian cover was related, negatively, to our metric of the magnitude of local impacts, HII. Our results suggest that benthic communities along the BBR have experienced disturbances that are beyond the capacity of the current management structure to mitigate. We recommend that managers devote greater resources and capacity to enforcing and expanding existing marine protected areas and to mitigating local stressors, and most importantly that government, industry, and the public act immediately to reduce global carbon emissions. 
 
-**The Repository contains the following code and data files:**  
+### **This repository contains all [figures](Figures/) included in the manuscript and supplemental as well as the following code and data files:**  
 
 [BRC_R_code](BRC_R_code.R) - is the R code for the data analysis and visualization  
 
