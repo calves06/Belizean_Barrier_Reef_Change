@@ -1,5 +1,5 @@
 # Belizean_Barrier_Reef_Change
-Pubic repository containing the code and data associated with analysis for Alves et al. (2022): Twenty years of change in benthic communities across the Belizean Barrier Reef.  
+Pubic repository containing the code, data, and figures associated with Alves et al. (2022): Twenty years of change in benthic communities across the Belizean Barrier Reef.  
 DOI: https://doi.org/10.1101/2021.03.15.435443  
 
 **Authors:** Catherine Alves, Abel Valdivia, Richard B. Aronson, Nadia Bood, Karl D. Castillo, Courtney Cox, Clare Fieseler, Zachary Locklear, Melanie McField, Laura Mudge, James Umbanhowar, John F. Bruno
